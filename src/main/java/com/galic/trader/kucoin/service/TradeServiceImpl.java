@@ -45,7 +45,7 @@ public class TradeServiceImpl implements TradeService {
     private Map<String, BuyOrderInfo> buyOrderIds = new HashMap<String, BuyOrderInfo>();
     private Map<String, String> sellOrderIds = new HashMap<String, String>();
 
-    @Scheduled(fixedRate = 40000)
+    @Scheduled(fixedRate = 4000000)
     public void scheduledRound() {
         executeRound(Coins.BCD, MAX_BTC_AMOUNT_PER_ORDER);
         executeRound(Coins.CPC, MAX_BTC_AMOUNT_PER_ORDER);
@@ -117,7 +117,9 @@ public class TradeServiceImpl implements TradeService {
                     .build();
 
             String orderId = orderService.placeOrder(orderRequest);
-            sellOrderIds.put(currencyPair, orderId);
+            if (orderId != null) {
+                sellOrderIds.put(currencyPair, orderId);
+            }
 
             log.info("Sell order placed for {}", currencyPair);
         } else {
@@ -149,7 +151,9 @@ public class TradeServiceImpl implements TradeService {
                     .build();
 
             String orderId = orderService.placeOrder(orderRequest);
-            buyOrderIds.put(currencyPair, new BuyOrderInfo(orderId, bestBuyPrice.add(MINIMAL_AMOUNT)));
+            if (orderId != null) {
+                buyOrderIds.put(currencyPair, new BuyOrderInfo(orderId, bestBuyPrice.add(MINIMAL_AMOUNT)));
+            }
 
             log.info("Buy order placed for {}", currencyPair);
         } else {
