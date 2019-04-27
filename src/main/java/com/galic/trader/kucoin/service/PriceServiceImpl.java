@@ -19,6 +19,8 @@ import java.util.stream.Stream;
 @Service
 public class PriceServiceImpl implements PriceService {
 
+    private static final BigDecimal MINIMUM_PERCENTAGE_PROFIT = BigDecimal.valueOf(1.03);
+
     @Autowired
     private MarketDataService marketDataService;
 
@@ -29,57 +31,55 @@ public class PriceServiceImpl implements PriceService {
     public BigDecimal getBestSellPrice(String currencyPair, LimitOrder order) throws IOException {
         CurrencyPair currencyPairFormatted = new CurrencyPair(currencyPair, Coins.BTC.getPair());
         OrderBook orderBook = marketDataService.getOrderBook(currencyPairFormatted);
+        BigDecimal sellPrice;
 
-        LimitOrder currentBestOffer = orderBook.getAsks().stream()
-                .filter(offer -> amountCalculator.doesOrderHasEnoughVolume(offer))
+        LimitOrder currentBestSellOrder = orderBook.getAsks().stream()
                 .filter(order != null ? offer -> offer.getLimitPrice().compareTo(order.getLimitPrice()) != 0 : offer -> true)
                 .min(Comparator.comparing(LimitOrder::getLimitPrice))
                 .orElseThrow(NoSuchElementException::new);
 
-        LimitOrder offerBeforeBestOffer = orderBook.getAsks().stream()
-                .filter(offer -> amountCalculator.doesOrderHasEnoughVolume(offer))
+        LimitOrder currentBestBuyOrder = orderBook.getBids().stream()
                 .filter(order != null ? offer -> offer.getLimitPrice().compareTo(order.getLimitPrice()) != 0 : offer -> true)
-                .filter(offer -> offer.getLimitPrice() != currentBestOffer.getLimitPrice())
-                .min(Comparator.comparing(LimitOrder::getLimitPrice))
+                .max(Comparator.comparing(LimitOrder::getLimitPrice))
                 .orElseThrow(NoSuchElementException::new);
 
-        // Used to prevent sellers which wants just to cheat me
-        if (offerBeforeBestOffer.getLimitPrice().divide(currentBestOffer.getLimitPrice(), 7, RoundingMode.DOWN)
-                .subtract(BigDecimal.ONE).compareTo(BigDecimal.valueOf(0.20)) == -1) {
-            return currentBestOffer.getLimitPrice();
+        BigDecimal currentBestSellPrice = currentBestSellOrder.getLimitPrice();
+        BigDecimal currentBestBuyPrice = currentBestBuyOrder.getLimitPrice();
+
+        if (currentBestSellPrice.divide(currentBestBuyPrice, 7, RoundingMode.DOWN).compareTo(MINIMUM_PERCENTAGE_PROFIT) == 1) {
+            sellPrice = currentBestSellPrice;
+        } else {
+            sellPrice = currentBestBuyPrice.multiply(MINIMUM_PERCENTAGE_PROFIT);
         }
 
-        return offerBeforeBestOffer.getLimitPrice();
+        return sellPrice.setScale(8, RoundingMode.DOWN);
     }
 
     @Override
     public BigDecimal getBestBuyPrice(String currencyPair, LimitOrder order) throws IOException {
         CurrencyPair currencyPairFormatted = new CurrencyPair(currencyPair, Coins.BTC.getPair());
         OrderBook orderBook = marketDataService.getOrderBook(currencyPairFormatted);
+        BigDecimal buyPrice;
 
-        Stream<LimitOrder> baseOffer = orderBook.getBids().stream()
-                .filter(offer -> amountCalculator.doesOrderHasEnoughVolume(offer))
-                .filter(order != null ? offer -> offer.getLimitPrice().compareTo(order.getLimitPrice()) != 0 : offer -> true);
+        LimitOrder currentBestSellOrder = orderBook.getAsks().stream()
+                .filter(order != null ? offer -> offer.getLimitPrice().compareTo(order.getLimitPrice()) != 0 : offer -> true)
+                .min(Comparator.comparing(LimitOrder::getLimitPrice))
+                .orElseThrow(NoSuchElementException::new);
 
-        LimitOrder currentBestOffer = orderBook.getBids().stream()
-                .filter(offer -> amountCalculator.doesOrderHasEnoughVolume(offer))
+        LimitOrder currentBestBuyOrder = orderBook.getBids().stream()
                 .filter(order != null ? offer -> offer.getLimitPrice().compareTo(order.getLimitPrice()) != 0 : offer -> true)
                 .max(Comparator.comparing(LimitOrder::getLimitPrice))
                 .orElseThrow(NoSuchElementException::new);
 
-        LimitOrder offerBeforeBestOffer = orderBook.getBids().stream()
-                .filter(offer -> amountCalculator.doesOrderHasEnoughVolume(offer))
-                .filter(order != null ? offer -> offer.getLimitPrice().compareTo(order.getLimitPrice()) != 0 : offer -> true)
-                .filter(offer -> offer.getLimitPrice() != currentBestOffer.getLimitPrice())
-                .max(Comparator.comparing(LimitOrder::getLimitPrice))
-                .orElseThrow(NoSuchElementException::new);
+        BigDecimal currentBestSellPrice = currentBestSellOrder.getLimitPrice();
+        BigDecimal currentBestBuyPrice = currentBestBuyOrder.getLimitPrice();
 
-        // Used to prevent buyers which wants just to cheat me
-        if (currentBestOffer.getLimitPrice().divide(offerBeforeBestOffer.getLimitPrice(), 7, RoundingMode.DOWN)
-                .subtract(BigDecimal.ONE).compareTo(BigDecimal.valueOf(0.20)) == -1) {
-            return currentBestOffer.getLimitPrice();
+        if (currentBestSellPrice.divide(currentBestBuyPrice, 7, RoundingMode.DOWN).compareTo(MINIMUM_PERCENTAGE_PROFIT) == 1) {
+            buyPrice = currentBestBuyPrice;
+        } else {
+            buyPrice = currentBestSellPrice.multiply(BigDecimal.valueOf(2).subtract(MINIMUM_PERCENTAGE_PROFIT).abs());
         }
 
-        return offerBeforeBestOffer.getLimitPrice();
+        return buyPrice.setScale(8, RoundingMode.DOWN);
     }
 }

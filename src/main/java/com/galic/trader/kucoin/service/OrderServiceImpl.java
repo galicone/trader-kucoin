@@ -5,6 +5,8 @@ import com.galic.trader.kucoin.domain.OrderResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.knowm.xchange.dto.trade.LimitOrder;
 import org.knowm.xchange.dto.trade.OpenOrders;
+import org.knowm.xchange.exceptions.ExchangeException;
+import org.knowm.xchange.kucoin.service.KucoinApiException;
 import org.knowm.xchange.service.trade.TradeService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -49,12 +51,13 @@ public class OrderServiceImpl implements OrderService {
     @Override
     public void cancelOrder(String orderId, String currencyPair) {
         try {
-            tradeService.cancelOrder(orderId);
-        } catch (HttpClientErrorException e) {
-            if (e.getStatusCode() == HttpStatus.NOT_FOUND) {
+            if (getOrder(orderId) == null) {
                 log.info("-----------> ORDER IS MOST PROBABLY REALISED FOR {} <-----------", currencyPair);
-            } else {
-                log.error("Order does not exists. Error {}", e);
+            }
+            tradeService.cancelOrder(orderId);
+        } catch (ExchangeException e) {
+            if ((e.getCause() instanceof  KucoinApiException) && ((KucoinApiException) e.getCause()).getCode() == "400100") {
+                log.info("-----------> ORDER IS MOST PROBABLY REALISED FOR {} <-----------", currencyPair);
             }
         } catch (Exception e) {
             log.error("Order does not exists. Error {}", e);

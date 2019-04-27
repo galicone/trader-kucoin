@@ -36,8 +36,7 @@ public class TradeServiceImpl implements TradeService {
     private AmountCalculator amountCalculator;
 
     private static final BigDecimal MINIMAL_AMOUNT = BigDecimal.valueOf(0.00000001).setScale(8);
-    private static final BigDecimal MINIMAL_BUY_AMOUNT = BigDecimal.valueOf(0.1);
-    private static final BigDecimal MINIMAL_SELL_AMOUNT = BigDecimal.valueOf(0.0032);
+    private static final BigDecimal MINIMAL_ORDER_AMOUNT = BigDecimal.valueOf(1);
     private static final BigDecimal MAX_BTC_AMOUNT_PER_ORDER = BigDecimal.valueOf(0.0013);
 
     private Map<String, BigDecimal> stateHolder = new HashMap<String, BigDecimal>();
@@ -45,7 +44,7 @@ public class TradeServiceImpl implements TradeService {
     private Map<String, BuyOrderInfo> buyOrderIds = new HashMap<String, BuyOrderInfo>();
     private Map<String, String> sellOrderIds = new HashMap<String, String>();
 
-    @Scheduled(fixedRate = 4000000)
+    @Scheduled(fixedRate = 30000)
     public void scheduledRound() {
         executeRound(Coins.BCD, MAX_BTC_AMOUNT_PER_ORDER);
         executeRound(Coins.CPC, MAX_BTC_AMOUNT_PER_ORDER);
@@ -65,12 +64,12 @@ public class TradeServiceImpl implements TradeService {
             BigDecimal amountToBuy = amountCalculator.calculateAmountToBuy(currencyPair, btcAmountToUse,
                     getbuyOrderId(buyOrderIds.get(currencyPair)), sellOrderIds.get(currencyPair));
 
-            if (currencyAvailableBalance.compareTo(MINIMAL_SELL_AMOUNT) > 0) {
+            if (currencyAvailableBalance.compareTo(MINIMAL_ORDER_AMOUNT) > 0) {
                 placeSellOrder(currencyPair, currency);
                 stateHolder.remove(currencyPair);
             }
 
-            if (amountToBuy.compareTo(MINIMAL_BUY_AMOUNT) > 0 && (stateHolder.get(currencyPair) == null
+            if (amountToBuy.compareTo(MINIMAL_ORDER_AMOUNT) > 0 && (stateHolder.get(currencyPair) == null
                     || stateHolder.get(currencyPair).compareTo(btcAmountToUse) == -1)) {
                 placeBuyOrder(currencyPair, amountToBuy);
                 stateHolder.put(currencyPair, btcAmountToUse);
@@ -104,11 +103,11 @@ public class TradeServiceImpl implements TradeService {
         if (buyOrderIds.get(currencyPair) != null) {
             BigDecimal buyingPrice = buyOrderIds.get(currencyPair).getBuyOrderPrice();
             if (bestSellPrice.divide(buyingPrice, 7, RoundingMode.DOWN).subtract(BigDecimal.ONE).compareTo(BigDecimal.valueOf(0.03)) == -1) {
-                bestSellPrice = buyingPrice.multiply(BigDecimal.valueOf(1.03));
+                bestSellPrice = buyingPrice.multiply(BigDecimal.valueOf(1.03)).setScale(8, RoundingMode.DOWN);
             }
         }
 
-        if (currencyAvailableBalance.compareTo(MINIMAL_SELL_AMOUNT) > 0) {
+        if (currencyAvailableBalance.compareTo(MINIMAL_ORDER_AMOUNT) > 0) {
             OrderRequest orderRequest = OrderRequest.builder()
                     .price(bestSellPrice)
                     .quantity(currencyAvailableBalance)
@@ -141,7 +140,7 @@ public class TradeServiceImpl implements TradeService {
             }
             buyOrderIds.remove(currencyPair);
         }
-        if (amount.compareTo(MINIMAL_SELL_AMOUNT) > 0) {
+        if (amount.compareTo(MINIMAL_ORDER_AMOUNT) > 0) {
             BigDecimal bestBuyPrice = priceService.getBestBuyPrice(currencyPair, order);
             OrderRequest orderRequest = OrderRequest.builder()
                     .price(bestBuyPrice.add(MINIMAL_AMOUNT))
@@ -165,19 +164,27 @@ public class TradeServiceImpl implements TradeService {
         if (buyOrderIds.containsKey(currencyPair)) {
             LimitOrder order = orderService.getOrder(getbuyOrderId(buyOrderIds.get(currencyPair)));
 
-            BigDecimal bestBuyPrice = priceService.getBestBuyPrice(currencyPair, order);
+            if (order != null) {
+                BigDecimal bestBuyPrice = priceService.getBestBuyPrice(currencyPair, order);
 
-            if (bestBuyPrice.add(MINIMAL_AMOUNT).compareTo(order.getLimitPrice()) != 0) {
-                orderService.cancelOrder(getbuyOrderId(buyOrderIds.get(currencyPair)), currencyPair);
+                if (bestBuyPrice.add(MINIMAL_AMOUNT).compareTo(order.getLimitPrice()) != 0) {
+                    orderService.cancelOrder(getbuyOrderId(buyOrderIds.get(currencyPair)), currencyPair);
+                    buyOrderIds.remove(currencyPair);
+                    stateHolder.remove(currencyPair);
+
+                    BigDecimal btcAvailableBalance = balanceService.getAvailableBalance(Currency.BTC);
+                    BigDecimal BTCAmountToUse = btcAvailableBalance.compareTo(MAX_BTC_AMOUNT_PER_ORDER) == -1 ? btcAvailableBalance : MAX_BTC_AMOUNT_PER_ORDER;
+
+                    placeBuyOrder(currencyPair, amountCalculator.calculateAmountToBuy(currencyPair, BTCAmountToUse,
+                            getbuyOrderId(buyOrderIds.get(currencyPair)), sellOrderIds.get(currencyPair)));
+                    log.info("Buy order adjusted for {}", currencyPair);
+                }
+            } else {
                 buyOrderIds.remove(currencyPair);
-
-                BigDecimal btcAvailableBalance = balanceService.getAvailableBalance(Currency.BTC);
-                BigDecimal BTCAmountToUse = btcAvailableBalance.compareTo(MAX_BTC_AMOUNT_PER_ORDER) == -1 ? btcAvailableBalance : MAX_BTC_AMOUNT_PER_ORDER;
-
-                placeBuyOrder(currencyPair, amountCalculator.calculateAmountToBuy(currencyPair, BTCAmountToUse,
-                        getbuyOrderId(buyOrderIds.get(currencyPair)), sellOrderIds.get(currencyPair)));
-                log.info("Buy order adjusted for {}", currencyPair);
+                stateHolder.remove(currencyPair);
+                log.info("-----------> BUY ORDER IS MOST PROBABLY REALISED FOR {} <-----------", currencyPair);
             }
+
         }
     }
 
@@ -185,14 +192,18 @@ public class TradeServiceImpl implements TradeService {
         if (sellOrderIds.containsKey(currencyPair)) {
             LimitOrder order = orderService.getOrder(sellOrderIds.get(currencyPair));
 
-            BigDecimal bestSellPrice = priceService.getBestSellPrice(currencyPair, order);
+            if (order != null) {
+                BigDecimal bestSellPrice = priceService.getBestSellPrice(currencyPair, order);
+                if (order.getLimitPrice().add(MINIMAL_AMOUNT).compareTo(bestSellPrice) != 0) {
+                    orderService.cancelOrder(sellOrderIds.get(currencyPair), currencyPair);
+                    sellOrderIds.remove(currencyPair);
 
-            if (order.getLimitPrice().add(MINIMAL_AMOUNT).compareTo(bestSellPrice) != 0) {
-                orderService.cancelOrder(sellOrderIds.get(currencyPair), currencyPair);
+                    placeSellOrder(currencyPair, currency);
+                    log.info("Sell order adjusted for {}", currencyPair);
+                }
+            } else {
                 sellOrderIds.remove(currencyPair);
-
-                placeSellOrder(currencyPair, currency);
-                log.info("Sell order adjusted for {}", currencyPair);
+                log.info("-----------> SELL ORDER IS MOST PROBABLY REALISED FOR {} <-----------", currencyPair);
             }
         }
     }
