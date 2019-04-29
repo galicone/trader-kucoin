@@ -28,7 +28,7 @@ public class PriceServiceImpl implements PriceService {
     private AmountCalculator amountCalculator;
 
     @Override
-    public BigDecimal getBestSellPrice(String currencyPair, LimitOrder order) throws IOException {
+    public BigDecimal getBestSellPrice(String currencyPair, LimitOrder order, int pricePrecision) throws IOException {
         CurrencyPair currencyPairFormatted = new CurrencyPair(currencyPair, Coins.BTC.getPair());
         OrderBook orderBook = marketDataService.getOrderBook(currencyPairFormatted);
         BigDecimal sellPrice;
@@ -46,17 +46,17 @@ public class PriceServiceImpl implements PriceService {
         BigDecimal currentBestSellPrice = currentBestSellOrder.getLimitPrice();
         BigDecimal currentBestBuyPrice = currentBestBuyOrder.getLimitPrice();
 
-        if (currentBestSellPrice.divide(currentBestBuyPrice, 7, RoundingMode.DOWN).compareTo(MINIMUM_PERCENTAGE_PROFIT) == 1) {
+        if (currentBestSellPrice.divide(currentBestBuyPrice, pricePrecision, RoundingMode.DOWN).compareTo(MINIMUM_PERCENTAGE_PROFIT) == 1) {
             sellPrice = currentBestSellPrice;
         } else {
             sellPrice = currentBestBuyPrice.multiply(MINIMUM_PERCENTAGE_PROFIT);
         }
 
-        return sellPrice.setScale(8, RoundingMode.DOWN);
+        return sellPrice.setScale(pricePrecision, RoundingMode.DOWN);
     }
 
     @Override
-    public BigDecimal getBestBuyPrice(String currencyPair, LimitOrder order) throws IOException {
+    public BigDecimal getBestBuyPrice(String currencyPair, LimitOrder order, int pricePrecision) throws IOException {
         CurrencyPair currencyPairFormatted = new CurrencyPair(currencyPair, Coins.BTC.getPair());
         OrderBook orderBook = marketDataService.getOrderBook(currencyPairFormatted);
         BigDecimal buyPrice;
@@ -74,12 +74,12 @@ public class PriceServiceImpl implements PriceService {
         BigDecimal currentBestSellPrice = currentBestSellOrder.getLimitPrice();
         BigDecimal currentBestBuyPrice = currentBestBuyOrder.getLimitPrice();
 
-        if (currentBestSellPrice.divide(currentBestBuyPrice, 7, RoundingMode.DOWN).compareTo(MINIMUM_PERCENTAGE_PROFIT) == 1) {
+        if (currentBestSellPrice.divide(currentBestBuyPrice, pricePrecision, RoundingMode.DOWN).compareTo(MINIMUM_PERCENTAGE_PROFIT) == 1) {
             buyPrice = currentBestBuyPrice;
         } else {
             buyPrice = currentBestSellPrice.multiply(BigDecimal.valueOf(2).subtract(MINIMUM_PERCENTAGE_PROFIT).abs());
         }
 
-        return buyPrice.setScale(8, RoundingMode.DOWN);
+        return buyPrice.setScale(pricePrecision, RoundingMode.DOWN);
     }
 }

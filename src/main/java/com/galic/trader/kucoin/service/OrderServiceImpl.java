@@ -27,7 +27,6 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public String placeOrder(OrderRequest orderRequest) {
-        ResponseEntity<OrderResponse> orderResponse = null;
         try {
             LimitOrder limitOrder =
                     new LimitOrder.Builder(orderRequest.getOrderType(), orderRequest.getCurrencyPair())

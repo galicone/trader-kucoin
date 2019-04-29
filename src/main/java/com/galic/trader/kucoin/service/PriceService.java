@@ -9,7 +9,7 @@ import java.math.BigDecimal;
 
 public interface PriceService {
 
-    BigDecimal getBestSellPrice(String currencyPair, LimitOrder order) throws IOException;
+    BigDecimal getBestSellPrice(String currencyPair, LimitOrder order, int pricePrecision) throws IOException;
 
-    BigDecimal getBestBuyPrice(String currencyPair, LimitOrder order) throws IOException;
+    BigDecimal getBestBuyPrice(String currencyPair, LimitOrder order, int pricePrecision) throws IOException;
 }

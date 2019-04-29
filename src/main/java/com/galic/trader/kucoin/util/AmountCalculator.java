@@ -15,7 +15,6 @@ import java.math.RoundingMode;
 @Component
 public class AmountCalculator {
 
-    private static final BigDecimal MINIMAL_ORDER_AMOUNT_IN_BTC = BigDecimal.valueOf(0.0015);
     private static final BigDecimal MINIMAL_AMOUNT = BigDecimal.valueOf(0.00000001);
 
     @Autowired
@@ -24,8 +23,11 @@ public class AmountCalculator {
     @Autowired
     private OrderService orderService;
 
-    public BigDecimal calculateAmountToBuy(String currencyPair, BigDecimal btcAmount, String buyOrderId, String sellOrderId) throws IOException {
-        BigDecimal bestBuyPrice = priceService.getBestBuyPrice(currencyPair, null);
+    public BigDecimal calculateAmountToBuy(Coins coin, BigDecimal btcAmount, String buyOrderId, String sellOrderId) throws IOException {
+        String currencyPair = coin.getPair();
+        int pricePrecision = coin.getPricePrecision();
+
+        BigDecimal bestBuyPrice = priceService.getBestBuyPrice(currencyPair, null, pricePrecision);
         BigDecimal buyPrice = bestBuyPrice.add(MINIMAL_AMOUNT);
 
         BigDecimal amountFromBuyOrder = BigDecimal.ZERO;
@@ -45,9 +47,5 @@ public class AmountCalculator {
         }
 
         return btcAmount.divide(buyPrice, 3, RoundingMode.DOWN).subtract(amountFromBuyOrder).subtract(amountFromSellOrder);
-    }
-
-    public boolean doesOrderHasEnoughVolume(LimitOrder offer) {
-        return offer.getLimitPrice().multiply(offer.getOriginalAmount()).compareTo(MINIMAL_ORDER_AMOUNT_IN_BTC) > 0;
     }
 }
